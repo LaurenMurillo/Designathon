@@ -1,0 +1,279 @@
+
+<style>
+  * { box-sizing: border-box; }
+  .wrap { padding: 1rem 0; font-size: 13px; }
+  .sensor-grid { display: flex; flex-direction: column; gap: 12px; }
+  .sensor-card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); overflow: hidden; }
+  .sensor-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 0.5px solid var(--color-border-tertiary); cursor: pointer; user-select: none; }
+  .sensor-header:hover { background: var(--color-background-secondary); }
+  .sensor-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; flex-shrink: 0; }
+  .sensor-name { font-weight: 500; font-size: 14px; color: var(--color-text-primary); flex: 1; }
+  .sensor-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+  .tag-cheap { background: var(--color-background-success); color: var(--color-text-success); }
+  .tag-mid { background: var(--color-background-warning); color: var(--color-text-warning); }
+  .tag-high { background: var(--color-background-danger); color: var(--color-text-danger); }
+  .tag-proto { background: var(--color-background-info); color: var(--color-text-info); }
+  .chevron { font-size: 10px; color: var(--color-text-tertiary); transition: transform 0.2s; }
+  .chevron.open { transform: rotate(90deg); }
+  .sensor-body { display: none; padding: 12px 14px; }
+  .sensor-body.open { display: block; }
+  .pro-con-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .col-head { font-size: 11px; font-weight: 500; letter-spacing: 0.04em; margin-bottom: 8px; }
+  .col-pro .col-head { color: var(--color-text-success); }
+  .col-con .col-head { color: var(--color-text-danger); }
+  .item { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 6px; font-size: 12px; color: var(--color-text-secondary); line-height: 1.45; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+  .dot-pro { background: var(--color-text-success); }
+  .dot-con { background: var(--color-text-danger); }
+  .sensor-note { margin-top: 10px; padding-top: 10px; border-top: 0.5px solid var(--color-border-tertiary); font-size: 11px; color: var(--color-text-tertiary); font-style: italic; }
+  .filter-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .filter-btn { font-size: 11px; padding: 4px 10px; border-radius: 20px; border: 0.5px solid var(--color-border-secondary); background: transparent; color: var(--color-text-secondary); cursor: pointer; }
+  .filter-btn.active { background: var(--color-background-secondary); color: var(--color-text-primary); border-color: var(--color-border-primary); }
+</style>
+<div class="wrap">
+  <div class="filter-row" id="filters">
+    <button class="filter-btn active" onclick="filterSensors('all', this)">All sensors</button>
+    <button class="filter-btn" onclick="filterSensors('cheap', this)">Low cost</button>
+    <button class="filter-btn" onclick="filterSensors('mid', this)">Mid cost</button>
+    <button class="filter-btn" onclick="filterSensors('high', this)">High cost</button>
+    <button class="filter-btn" onclick="filterSensors('proto', this)">Prototype pick</button>
+  </div>
+  <div class="sensor-grid" id="sensor-grid"></div>
+</div>
+<script>
+const sensors = [
+  {
+    name: "Ultrasonic sensor",
+    icon: "〜",
+    iconBg: "#E1F5EE", iconColor: "#0F6E56",
+    cost: "cheap",
+    costLabel: "Low cost",
+    tags: ["proto"],
+    pros: [
+      "Very cheap — ideal for prototype / proof of concept",
+      "Good for detecting fill level (distance to top of trash)",
+      "Well-documented, easy to integrate with Pi Pico or Arduino",
+      "Reliable for detecting liquid by comparing volume vs weight anomalies"
+    ],
+    cons: [
+      "Metal trash items can deflect / scatter the signal causing false readings",
+      "Cannot classify what is inside the bin",
+      "Sensitive to temperature and humidity fluctuations",
+      "No motion sensing capability"
+    ],
+    note: "Best role: fill-level detection in prototype. Pair with load cell for weight cross-check."
+  },
+  {
+    name: "Load cell (scale / weight sensor)",
+    icon: "⚖",
+    iconBg: "#E6F1FB", iconColor: "#185FA5",
+    cost: "cheap",
+    costLabel: "Low cost",
+    tags: [],
+    pros: [
+      "Directly measures weight — reliably detects overfull bins before they get heavier",
+      "Weight vs. volume comparison can flag liquid waste (e.g., a cup that's surprisingly heavy)",
+      "Boolean weight-limit switch variant is extremely low cost and simple to implement",
+      "No mechanical moving parts in sensor itself — long lifespan",
+      "Pairs well with a cheap microcontroller (Pi Pico, Arduino)",
+      "Can help workers prioritize pickup by weight (don't let bags get heavier than needed)"
+    ],
+    cons: [
+      "Cannot identify what type of waste is present",
+      "Needs calibration and protection from moisture",
+      "A bin placed on a scale may be harder to physically lift / move",
+      "Weight alone can't distinguish between a heavy full bag vs. dense single item"
+    ],
+    note: "Best role: primary fullness/overflow detection. Probably the cheapest reliable option for the core 'is this bin full?' use case."
+  },
+  {
+    name: "Passive infrared (PIR) sensor",
+    icon: "○",
+    iconBg: "#FAEEDA", iconColor: "#854F0B",
+    cost: "cheap",
+    costLabel: "Low cost",
+    tags: [],
+    pros: [
+      "Very cheap — same tech as paper towel dispensers",
+      "Detects motion: knows when someone throws something in",
+      "Can estimate fill level via distance measurement",
+      "Passive — uses very little power, good for battery-powered deployment",
+      "No moving parts, long operational lifespan"
+    ],
+    cons: [
+      "Heat-based — can be confused by ambient temperature changes or sunlight",
+      "Cannot classify waste type or identify hazardous materials",
+      "Limited range compared to radar or camera",
+      "Motion detection may trigger false positives from wind or animals"
+    ],
+    note: "Best role: low-power motion trigger (knows when bin is being used) + rough fill detection."
+  },
+  {
+    name: "Moisture / humidity sensor",
+    icon: "~",
+    iconBg: "#E1F5EE", iconColor: "#0F6E56",
+    cost: "cheap",
+    costLabel: "Low cost",
+    tags: [],
+    pros: [
+      "Directly detects liquid in the bin — a key hazard flag for workers",
+      "Very cheap and simple to add as a secondary sensor",
+      "Works when ultrasonic reading would be blocked by metal debris"
+    ],
+    cons: [
+      "Only detects moisture — not the nature or volume of liquid",
+      "Sensor degrades over time with repeated moisture exposure",
+      "Cannot detect dry hazards like batteries or sharps",
+      "Needs periodic cleaning / replacement"
+    ],
+    note: "Best role: liquid hazard flag, paired with load cell for liquid weight confirmation."
+  },
+  {
+    name: "Microwave / capacitive sensor",
+    icon: "≋",
+    iconBg: "#FBEAF0", iconColor: "#993556",
+    cost: "mid",
+    costLabel: "Mid cost",
+    tags: [],
+    pros: [
+      "Can detect motion through non-metallic materials (works even with bin closed)",
+      "Less affected by temperature than PIR",
+      "Suitable for fill-level and presence detection"
+    ],
+    cons: [
+      "More expensive than PIR or ultrasonic",
+      "Still cannot classify waste content",
+      "May require more tuning to avoid false positives in outdoor environments",
+      "Not as precise as mmWave radar for measurement accuracy"
+    ],
+    note: "Best role: motion detection where PIR fails due to temperature interference."
+  },
+  {
+    name: "Camera + image classifier (e.g., Intel RealSense)",
+    icon: "▣",
+    iconBg: "#EEEDFE", iconColor: "#3C3489",
+    cost: "high",
+    costLabel: "High cost",
+    tags: [],
+    pros: [
+      "Can classify waste type (food, e-waste, recyclable, sharps, etc.)",
+      "Identifies hazardous items like batteries or sharp objects",
+      "Can determine fill level and volume",
+      "Rich data — enables training better ML models over time",
+      "Workers can be routed to bins by waste type (e.g., food waste bins for compost pickup)"
+    ],
+    cons: [
+      "Most expensive option — may price out small deployments",
+      "Requires significant processing power (Pi alone may not be enough)",
+      "Privacy concerns if deployed in public spaces",
+      "Occlusion problem: items at bottom of bin may be hidden by items on top",
+      "Needs lighting — low-light bins are a challenge",
+      "Maintenance: lens gets dirty in a trash environment"
+    ],
+    note: "Best role: waste classification and hazard identification where budget allows. Consider lid-mounted to capture items at point of deposit."
+  },
+  {
+    name: "Millimeter-wave (mmWave) radar",
+    icon: "◎",
+    iconBg: "#FAECE7", iconColor: "#993C1D",
+    cost: "high",
+    costLabel: "High cost",
+    tags: [],
+    pros: [
+      "Compact and high resolution — precise motion and distance measurement",
+      "Doppler effect enables detection of motion, fill level, and relative weight distribution",
+      "Works through non-metallic bin walls and in darkness",
+      "Effectively combines fill detection + motion sensing in one unit",
+      "More precise than ultrasonic — less susceptible to metal deflection"
+    ],
+    cons: [
+      "Most expensive single sensor option",
+      "Cannot visually classify waste type like a camera can",
+      "Overkill for simple fill-level use cases",
+      "Requires more complex signal processing and tuning",
+      "Less developer ecosystem support vs. ultrasonic or camera"
+    ],
+    note: "Best role: premium alternative to camera where privacy matters — does fill + motion but not classification."
+  },
+  {
+    name: "Haptic feedback / vibration (lid-mounted)",
+    icon: "↯",
+    iconBg: "#EAF3DE", iconColor: "#3B6D11",
+    cost: "cheap",
+    costLabel: "Low cost",
+    tags: [],
+    pros: [
+      "No mechanical components — long operational lifespan",
+      "Can confirm lid open/close events (knows when trash was deposited)",
+      "Low cost, minimal power draw",
+      "Could be repurposed as a weight-limit trigger when bag pushes against lid"
+    ],
+    cons: [
+      "Provides very limited data on its own",
+      "Cannot measure fill level or classify waste",
+      "Must be combined with other sensors to be meaningful",
+      "Vibration from wind or nearby traffic may cause false triggers outdoors"
+    ],
+    note: "Best role: lid-deposit event detection and as a supplemental confirmation trigger."
+  }
+];
+
+function toggle(idx) {
+  const body = document.getElementById('body-'+idx);
+  const chev = document.getElementById('chev-'+idx);
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  chev.classList.toggle('open', !isOpen);
+}
+
+function filterSensors(tag, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.sensor-card').forEach(card => {
+    const cardTag = card.dataset.cost;
+    const isProto = card.dataset.proto === 'true';
+    if (tag === 'all') card.style.display = '';
+    else if (tag === 'proto') card.style.display = isProto ? '' : 'none';
+    else card.style.display = cardTag === tag ? '' : 'none';
+  });
+}
+
+const grid = document.getElementById('sensor-grid');
+sensors.forEach((s, i) => {
+  const isProto = s.tags.includes('proto');
+  const card = document.createElement('div');
+  card.className = 'sensor-card';
+  card.dataset.cost = s.cost;
+  card.dataset.proto = isProto;
+
+  const tagHtml = isProto ? `<span class="sensor-tag tag-proto">Prototype pick</span>` : '';
+  const costClass = s.cost === 'cheap' ? 'tag-cheap' : s.cost === 'mid' ? 'tag-mid' : 'tag-high';
+
+  card.innerHTML = `
+    <div class="sensor-header" onclick="toggle(${i})">
+      <div class="sensor-icon" style="background:${s.iconBg};color:${s.iconColor}">${s.icon}</div>
+      <span class="sensor-name">${s.name}</span>
+      ${tagHtml}
+      <span class="sensor-tag ${costClass}">${s.costLabel}</span>
+      <span class="chevron" id="chev-${i}">▶</span>
+    </div>
+    <div class="sensor-body" id="body-${i}">
+      <div class="pro-con-row">
+        <div class="col-pro">
+          <div class="col-head">PROS</div>
+          ${s.pros.map(p => `<div class="item"><div class="dot dot-pro"></div>${p}</div>`).join('')}
+        </div>
+        <div class="col-con">
+          <div class="col-head">CONS</div>
+          ${s.cons.map(c => `<div class="item"><div class="dot dot-con"></div>${c}</div>`).join('')}
+        </div>
+      </div>
+      <div class="sensor-note">💡 ${s.note}</div>
+    </div>
+  `;
+  grid.appendChild(card);
+});
+
+// Open first card by default
+toggle(0);
+</script>
